@@ -1,0 +1,6 @@
+downloads/
+output/
+
+downloads/**
+output/**./output
+.
