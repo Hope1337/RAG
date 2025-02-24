@@ -21,7 +21,7 @@ corpus = {
     "haha": "Reinforcement learning can be applied to robotics and game playing.",
     17: "Gradient boosting is a powerful technique for structured data tasks.",
     18: "Random forests combine multiple decision trees to improve accuracy.",
-    19: "Principal component analysis (PCA) is used for dimensionality reduction.",
+    "test": "Principal component analysis (PCA) is used for dimensionality reduction.",
     20: "Feature engineering improves the performance of machine learning models.",
     21: "Hyperparameter tuning is essential for optimizing machine learning models.",
     22: "Bayesian optimization is a method for hyperparameter tuning.",
@@ -30,8 +30,10 @@ corpus = {
     25: "Cross-validation helps assess the performance of machine learning models."
 }
     
-queries = ["What is BERT?"]
+queries = ["What is BERT?", "What is PCA?"]
 
 
 ranked_list = retriever.retrieve(corpus, queries)
 print(ranked_list)
+
+[[{'corpus_id': 14, 'score': 0.5343802}, {'corpus_id': 24, 'score': 0.52953494}, {'corpus_id': 6, 'score': 0.5276069}, {'corpus_id': 22, 'score': 0.51982504}, {'corpus_id': 'hihi', 'score': 0.51965094}], [{'corpus_id': 17, 'score': 0.5004494}, {'corpus_id': 3, 'score': 0.49990156}, {'corpus_id': 1, 'score': 0.4987276}, {'corpus_id': 25, 'score': 0.4982901}, {'corpus_id': 22, 'score': 0.497758}]]
