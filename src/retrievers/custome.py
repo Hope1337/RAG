@@ -1,131 +1,125 @@
-
 from src.retrievers.hybrid import Aggregator, Ranker
 import pandas as pd
 from os.path import exists, join
 import numpy as np
+from ragatouille import RAGPretrainedModel
 
-class CustomeRetriever():
+import bm25s
+import Stemmer  # optional: for stemming
+from sentence_transformers import SentenceTransformer
+import faiss
+from colbert import Indexer, Searcher
+from colbert.infra import Run, RunConfig, ColBERTConfig
+from torch.cuda import empty_cache
+from src.retrievers.hybrid import Aggregator
 
-    def __init__(self, 
-        output_dir='output',
-        models_domain='general',  # or 'legal'
-        run_bm25=True,
-        run_e5=True,
-        run_bge=True,
-        run_colbert=True,
-        run_dpr=True,
-        run_splade=True,
-        run_monobert=True,
-        run_baai=True,
-        topk_bm25=5,
-        topk_e5=5,
-        topk_bge=5,
-        topk_colbert=5,
-        topk_dpr=5,
-        topk_splade=5,
-        topk_monobert=5,
-        topk_baai=5,
-        normalization='none',  
-        fusion='rrf'):
-        
-        self.output_dir    = output_dir
-        self.models_domain = models_domain
 
-        self.run_bm25     = run_bm25
-        self.topk_bm25    = topk_bm25
+def hugging_search(raw_corpus, queries, model_name, topk=5):
+        model = SentenceTransformer(model_name)
+        test = ['hi']
+        dimension = model.encode(test).shape[1]
+        index = faiss.IndexFlatL2(dimension) 
 
-        self.run_e5       = run_e5
-        self.topk_e5      = topk_e5
+        idx2id = {i:pid for i, pid in enumerate(raw_corpus.keys())}
+        corpus = list(raw_corpus.values())
 
-        self.run_bge      = run_bge
-        self.topk_bge     = topk_bge
+        embeddings = model.encode(corpus, normalize_embeddings=True)
+        index.add(embeddings)
 
-        self.run_colbert  = run_colbert
-        self.topk_colbert = topk_colbert
+        embeddings = model.encode(queries, normalize_embeddings=True)
+        distances, indices = index.search(embeddings, topk)
 
-        self.run_dpr      = run_dpr
-        self.topk_dpr     = topk_dpr
+        results = []
+        for i in range(len(queries)):
+            result_one_q = []
+            for idx, score in zip(indices[i], distances[i]):
+                result_one_q.append({'corpus_id': idx2id[idx], 'score': 1.0 - score})
+            results.append(result_one_q)
 
-        self.run_splade   = run_splade
-        self.topk_splade  = topk_splade
+        return results
 
-        self.run_monobert  = run_monobert
-        self.topk_monobert = topk_monobert
+def bm25_search(raw_corpus, queries, topk):
+    stemmer = Stemmer.Stemmer("english")
+    corpus  = raw_corpus.values()
+    corpus_tokens = bm25s.tokenize(corpus, stopwords="en", stemmer=stemmer)
+    retriever = bm25s.BM25()
+    retriever.index(corpus_tokens)
+    query_tokens = bm25s.tokenize(queries, stemmer=stemmer)
+    results, scores = retriever.retrieve(query_tokens, k=topk)
 
-        self.run_baai      = run_baai
-        self.topk_baai     = topk_baai
+    idx2id = {idx:id for idx, id in enumerate(raw_corpus.keys())}
 
-        self.normalization = normalization
-        self.fusion        = fusion
+    final_results = []
 
-        self.model_ckpts = {
-            'dpr': {
-                'general': 'antoinelouis/biencoder-camembert-base-mmarcoFR',
-                'legal': 'maastrichtlawtech/dpr-legal-french'
-            },
-            'splade': {
-                'general': 'antoinelouis/spladev2-camembert-base-mmarcoFR',
-                'legal': 'maastrichtlawtech/splade-legal-french'
-            },
-            'colbert': {
-                'general': 'antoinelouis/colbertv1-camembert-base-mmarcoFR',
-                'legal': 'maastrichtlawtech/colbert-legal-french'
-            },
-            'monobert': {
-                'general': 'antoinelouis/colbertv1-camembert-base-mmarcoFR',
-                'legal': 'maastrichtlawtech/monobert-legal-french'
-            }
-        }
+    for j in range(results.shape[0]):
+        result_one_q = []
+        for i in range(results.shape[1]):
+            doc, score = results[1, i], scores[1, i]
+            result_one_q.append({'corpus_id': idx2id[doc], 'score': score})
+        final_results.append(result_one_q)
     
-    def retrieve(self, corpus, queries):
+    return final_results
+
+
+def colbert_search(corpus, queries, model_name_or_path: str, output_dir: str = 'output', return_topk: int = None):
+    documents = list(corpus.values())
+    idx2id = {i: pid for i, pid in enumerate(corpus.keys())}
+
+    index_root = f"output/testing/indexes/{model_name_or_path.split('/')[-1]}"
+    if not exists(join(index_root, "lleqa.index")):
+        with Run().context(RunConfig(nranks=1, index_root=index_root)):
+            indexer = Indexer(checkpoint=model_name_or_path, config=ColBERTConfig(query_maxlen=64, doc_maxlen=512, gpus=0))
+            indexer.index(name="lleqa.index", collection=documents, overwrite='reuse')
+
+    with Run().context(RunConfig(nranks=1, index_root=index_root)):
+        searcher = Searcher(index="lleqa.index", config=ColBERTConfig(query_maxlen=64, doc_maxlen=512, gpus=0))
+        ranked_lists = searcher.search_all({idx: query for idx, query in enumerate(queries)}, k=return_topk or len(documents))
+
+    empty_cache()
+    return [[{'corpus_id': idx2id.get(x[0]), 'score': x[2]} for x in res] for res in ranked_lists.todict().values()]
+
+def colbert_rerank(raw_results, query, topk):
+    RAG = RAGPretrainedModel.from_pretrained("colbert-ir/colbertv2.0")
+    return RAG.rerank(query=query, documents=raw_results, k=topk)
+
+class CustomeRetriever:
+     
+     def __init__(self):
+        self.run_bm25 = True
+        self.run_e5   = True
+        self.run_baai = True
+
+        self.topk_bm25 = 10
+        self.topk_e5   = 10
+        self.topk_baai = 10
+        pass 
+     
+     def retrieve(self, corpus, queries, topk):
         results = {}
 
         if self.run_bm25:
-            print(f"\n# Ranking with BM25\n")
-            results['bm25'] = Ranker.bm25_search(queries, corpus, return_topk=self.topk_bm25, do_preprocessing=True, k1=2.5, b=0.2)
+            results['bm25'] = bm25_search(corpus, queries, self.topk_bm25)
         
-        if self.run_dpr:
-            print(f"\n# Ranking with DPR\n")
-            results['dpr'] = Ranker.single_vector_search(queries, corpus, return_topk=self.topk_dpr,model_name_or_path=self.model_ckpts['dpr'][self.models_domain])
-
-        if self.run_splade:
-            print(f"\n# Ranking with SPLADE\n")
-            results['splade'] = Ranker.single_vector_search(queries, corpus, return_topk=self.topk_splade ,model_name_or_path=self.model_ckpts['splade'][self.models_domain])
-
-        if self.run_colbert:
-            print(f"\n# Ranking with ColBERT\n")
-            results['colbert'] = Ranker.multi_vector_search(queries, corpus, return_topk=self.topk_colbert, model_name_or_path=self.model_ckpts['colbert'][self.models_domain])
+        if self.run_e5:
+            results['e5'] = hugging_search(corpus, queries, 'intfloat/e5-large-v2', self.topk_e5)
         
         if self.run_baai:
-            print(f"\n# Ranking with BAAI\n")
-            results['baai'] = Ranker.hugging_search(queries, corpus, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
-
-        if self.run_e5:
-            print(f"\n# Ranking with e5\n")
-            results['e5'] = Ranker.hugging_search(queries, corpus, 'intfloat/e5-large-v2', self.topk_e5)
-
+            results['baai'] = hugging_search(corpus, queries, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
         
-        distributions, weights = {}, {}
-        if self.fusion == 'nsf':
+        ranked_list = Aggregator.fuse(ranked_lists=results, method='rrf')
 
-            weights = {system: 1/len(results) for system in results}
+        final_ranked_list = []
 
-            if self.normalization == 'percentile-rank' or self.normalization == 'normal-curve-equivalent':
-                distr_df = pd.read_csv(join(self.output_dir, f"score_distributions_raw_{self.eval_type}_28k.csv"))
-                distributions = {k: np.array(v) for k, v in distr_df.to_dict('series').items()}
+        for qid, t in enumerate(ranked_list):
+            temp_corpus = []
+            temp_idx2id = {}
+            for tid, tt in enumerate(t):
+                temp_corpus.append(corpus[tt['corpus_id']])
+                temp_idx2id[tid] = tt['corpus_id']
+            
+            colbert_list = colbert_rerank(temp_corpus, queries[qid], topk=topk)
+            #print(colbert_list)
 
-        print(f"\n# Fusing results with {self.fusion.upper()}{' ('+self.normalization+')' if self.fusion == 'nsf' else ''}\n")
-        ranked_lists = Aggregator.fuse(ranked_lists=results, method=self.fusion, normalization=self.normalization, percentile_distributions=distributions, linear_weights=weights)
-    
-        #------------------------------------------------------#
-        #                       RERANKING
-        #------------------------------------------------------#
-        if self.run_monobert:
-            ranked_lists_dict = [
-                {doc['corpus_id']: corpus[doc['corpus_id']] for doc in ranked_list if doc['corpus_id'] in corpus}
-                for ranked_list in ranked_lists
-            ]
-            print(f"\n# Re-ranking with monoBERT \n")
-            ranked_lists = Ranker.cross_encoder_search(queries, ranked_lists_dict,return_topk=self.topk_monobert ,model_name_or_path=self.model_ckpts['monobert'][self.models_domain])
+            final_ranked_list.append([{'corpus_id': temp_idx2id[i['result_index']], 'score':i['score']} for i in colbert_list])
         
-        return ranked_lists
+        return final_ranked_list

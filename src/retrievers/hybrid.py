@@ -241,9 +241,9 @@ class Aggregator:
                 
                 query_results.append(res)
             
-            final_results.append(cls.aggregate_scores(*query_results))
+            final_results.append(cls.aggregate_scores(*query_results)[:return_topk])
         
-        return final_results[:return_topk]
+        return final_results
 
     @staticmethod
     def convert2dict(results):

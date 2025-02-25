@@ -1,30 +1,132 @@
-#from sentence_transformers import SentenceTransformer
-#import faiss
 
-#model = SentenceTransformer('intfloat/e5-large-v2')
-#input_texts = [
-    #"John is a assistant at my work",
-    #"Hi there, how are you today",
-    #"CDC is stand for Critical Department of Chinsu"
-#]
-#embeddings = model.encode(input_texts, normalize_embeddings=True)
+from src.retrievers.hybrid import Aggregator, Ranker
+import pandas as pd
+from os.path import exists, join
+import numpy as np
+from ragatouille import RAGPretrainedModel
 
-#print(embeddings.shape[1])
-#index = faiss.IndexFlatL2(embeddings.shape[1]) 
-#index.add(embeddings)
+import bm25s
+import Stemmer  # optional: for stemming
+from sentence_transformers import SentenceTransformer
+import faiss
+from colbert import Indexer, Searcher
+from colbert.infra import Run, RunConfig, ColBERTConfig
+from torch.cuda import empty_cache
+from src.retrievers.hybrid import Aggregator
 
-#queries = [
-    #'What is CDC?',
-    #'Who is John?'
-#]
-#embeddings = model.encode(queries, normalize_embeddings=True)
 
-#distances, indices = index.search(embeddings, 2)
+def hugging_search(raw_corpus, queries, model_name, topk=5):
+        model = SentenceTransformer(model_name)
+        test = ['hi']
+        dimension = model.encode(test).shape[1]
+        index = faiss.IndexFlatL2(dimension) 
 
-#print(distances)
-#print(indices)
+        idx2id = {i:pid for i, pid in enumerate(raw_corpus.keys())}
+        corpus = list(raw_corpus.values())
 
-from src.retrievers.hybrid import Ranker
+        embeddings = model.encode(corpus, normalize_embeddings=True)
+        index.add(embeddings)
+
+        embeddings = model.encode(queries, normalize_embeddings=True)
+        distances, indices = index.search(embeddings, topk)
+
+        results = []
+        for i in range(len(queries)):
+            result_one_q = []
+            for idx, score in zip(indices[i], distances[i]):
+                result_one_q.append({'corpus_id': idx2id[idx], 'score': 1.0 - score})
+            results.append(result_one_q)
+
+        return results
+
+def bm25_search(raw_corpus, queries, topk):
+    stemmer = Stemmer.Stemmer("english")
+    corpus  = raw_corpus.values()
+    corpus_tokens = bm25s.tokenize(corpus, stopwords="en", stemmer=stemmer)
+    retriever = bm25s.BM25()
+    retriever.index(corpus_tokens)
+    query_tokens = bm25s.tokenize(queries, stemmer=stemmer)
+    results, scores = retriever.retrieve(query_tokens, k=topk)
+
+    idx2id = {idx:id for idx, id in enumerate(raw_corpus.keys())}
+
+    final_results = []
+
+    for j in range(results.shape[0]):
+        result_one_q = []
+        for i in range(results.shape[1]):
+            doc, score = results[1, i], scores[1, i]
+            result_one_q.append({'corpus_id': idx2id[doc], 'score': score})
+        final_results.append(result_one_q)
+    
+    return final_results
+
+
+def colbert_search(corpus, queries, model_name_or_path: str, output_dir: str = 'output', return_topk: int = None):
+    documents = list(corpus.values())
+    idx2id = {i: pid for i, pid in enumerate(corpus.keys())}
+
+    index_root = f"output/testing/indexes/{model_name_or_path.split('/')[-1]}"
+    if not exists(join(index_root, "lleqa.index")):
+        with Run().context(RunConfig(nranks=1, index_root=index_root)):
+            indexer = Indexer(checkpoint=model_name_or_path, config=ColBERTConfig(query_maxlen=64, doc_maxlen=512, gpus=0))
+            indexer.index(name="lleqa.index", collection=documents, overwrite='reuse')
+
+    with Run().context(RunConfig(nranks=1, index_root=index_root)):
+        searcher = Searcher(index="lleqa.index", config=ColBERTConfig(query_maxlen=64, doc_maxlen=512, gpus=0))
+        ranked_lists = searcher.search_all({idx: query for idx, query in enumerate(queries)}, k=return_topk or len(documents))
+
+    empty_cache()
+    return [[{'corpus_id': idx2id.get(x[0]), 'score': x[2]} for x in res] for res in ranked_lists.todict().values()]
+
+def colbert_rerank(raw_results, query, topk):
+    RAG = RAGPretrainedModel.from_pretrained("colbert-ir/colbertv2.0")
+    return RAG.rerank(query=query, documents=raw_results, k=topk)
+
+class CustomeRetriever:
+     
+     def __init__(self):
+        self.run_bm25 = True
+        self.run_e5   = True
+        self.run_baai = True
+
+        self.topk_bm25 = 10
+        self.topk_e5   = 10
+        self.topk_baai = 10
+        pass 
+     
+     def retrieve(self, corpus, queries, topk):
+        results = {}
+
+        if self.run_bm25:
+            results['bm25'] = bm25_search(corpus, queries, self.topk_bm25)
+        
+        if self.run_e5:
+            results['e5'] = hugging_search(corpus, queries, 'intfloat/e5-large-v2', self.topk_e5)
+        
+        if self.run_baai:
+            results['baai'] = hugging_search(corpus, queries, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
+        
+        ranked_list = Aggregator.fuse(ranked_lists=results, method='rrf')
+
+        final_ranked_list = []
+
+        for qid, t in enumerate(ranked_list):
+            temp_corpus = []
+            temp_idx2id = {}
+            for tid, tt in enumerate(t):
+                temp_corpus.append(corpus[tt['corpus_id']])
+                temp_idx2id[tid] = tt['corpus_id']
+            
+            colbert_list = colbert_rerank(temp_corpus, queries[qid], topk=topk)
+            #print(colbert_list)
+
+            final_ranked_list.append([{'corpus_id': temp_idx2id[i['result_index']], 'score':i['score']} for i in colbert_list])
+        
+        return final_ranked_list
+
+retriever = CustomeRetriever()
+
 corpus = {
     1: "Machine learning is a field of artificial intelligence.",
     2: "Deep learning is a subset of machine learning focused on neural networks.",
@@ -55,9 +157,8 @@ corpus = {
     
 queries = ["What is BERT?", "What is PCA?"]
 
-results = Ranker.hugging_search(queries, corpus, model_name='BAAI/bge-large-zh-v1.5')
+ranked_list = retriever.retrieve(corpus, queries, topk=5)
+print(ranked_list)
 
-for result in results:
-    print(result) 
-    print()
-
+for t in ranked_list:
+    print(len(t))
