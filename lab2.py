@@ -1,7 +1,30 @@
-from src.retrievers.custome import CustomeRetriever
+#from sentence_transformers import SentenceTransformer
+#import faiss
 
-retriever = CustomeRetriever(run_splade=False)
+#model = SentenceTransformer('intfloat/e5-large-v2')
+#input_texts = [
+    #"John is a assistant at my work",
+    #"Hi there, how are you today",
+    #"CDC is stand for Critical Department of Chinsu"
+#]
+#embeddings = model.encode(input_texts, normalize_embeddings=True)
 
+#print(embeddings.shape[1])
+#index = faiss.IndexFlatL2(embeddings.shape[1]) 
+#index.add(embeddings)
+
+#queries = [
+    #'What is CDC?',
+    #'Who is John?'
+#]
+#embeddings = model.encode(queries, normalize_embeddings=True)
+
+#distances, indices = index.search(embeddings, 2)
+
+#print(distances)
+#print(indices)
+
+from src.retrievers.hybrid import Ranker
 corpus = {
     1: "Machine learning is a field of artificial intelligence.",
     2: "Deep learning is a subset of machine learning focused on neural networks.",
@@ -32,6 +55,9 @@ corpus = {
     
 queries = ["What is BERT?", "What is PCA?"]
 
+results = Ranker.hugging_search(queries, corpus, model_name='BAAI/bge-large-zh-v1.5')
 
-ranked_list = retriever.retrieve(corpus, queries)
-print(ranked_list)
+for result in results:
+    print(result) 
+    print()
+

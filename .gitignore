@@ -1,6 +1,8 @@
 downloads/
 output/
+experiments/
 
 downloads/**
 output/**./output
+experiments/**
 .

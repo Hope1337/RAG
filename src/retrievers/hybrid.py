@@ -15,6 +15,8 @@ import itertools
 import numpy as np
 import pandas as pd
 from torch.cuda import empty_cache
+from sentence_transformers import SentenceTransformer
+import faiss
 
 load_dotenv()
 sys.path.append(str(pathlib.Path().resolve()))
@@ -160,7 +162,32 @@ class Ranker:
         
         del model; empty_cache()
         return ranked_lists
+    
+    @staticmethod
+    def hugging_search(queries, raw_corpus, model_name, topk=5):
+        model = SentenceTransformer(model_name)
 
+        test = ['hi']
+        dimension = model.encode(test).shape[1]
+        index = faiss.IndexFlatL2(dimension) 
+
+        idx2id = {i:pid for i, pid in enumerate(raw_corpus.keys())}
+        corpus = list(raw_corpus.values())
+
+        embeddings = model.encode(corpus, normalize_embeddings=True)
+        index.add(embeddings)
+
+        embeddings = model.encode(queries, normalize_embeddings=True)
+        distances, indices = index.search(embeddings, topk)
+
+        results = []
+        for i in range(len(queries)):
+            result_one_q = []
+            for idx, score in zip(indices[i], distances[i]):
+                result_one_q.append({'corpus_id': idx2id[idx], 'score': 1.0 - score})
+            results.append(result_one_q)
+
+        return results
 
 class Aggregator:
     """

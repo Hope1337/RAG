@@ -16,6 +16,7 @@ class CustomeRetriever():
         run_dpr=True,
         run_splade=True,
         run_monobert=True,
+        run_baai=True,
         topk_bm25=5,
         topk_e5=5,
         topk_bge=5,
@@ -23,6 +24,7 @@ class CustomeRetriever():
         topk_dpr=5,
         topk_splade=5,
         topk_monobert=5,
+        topk_baai=5,
         normalization='none',  
         fusion='rrf'):
         
@@ -47,8 +49,11 @@ class CustomeRetriever():
         self.run_splade   = run_splade
         self.topk_splade  = topk_splade
 
-        self.run_monobert  =  run_monobert
+        self.run_monobert  = run_monobert
         self.topk_monobert = topk_monobert
+
+        self.run_baai      = run_baai
+        self.topk_baai     = topk_baai
 
         self.normalization = normalization
         self.fusion        = fusion
@@ -78,7 +83,7 @@ class CustomeRetriever():
         if self.run_bm25:
             print(f"\n# Ranking with BM25\n")
             results['bm25'] = Ranker.bm25_search(queries, corpus, return_topk=self.topk_bm25, do_preprocessing=True, k1=2.5, b=0.2)
-
+        
         if self.run_dpr:
             print(f"\n# Ranking with DPR\n")
             results['dpr'] = Ranker.single_vector_search(queries, corpus, return_topk=self.topk_dpr,model_name_or_path=self.model_ckpts['dpr'][self.models_domain])
@@ -90,6 +95,14 @@ class CustomeRetriever():
         if self.run_colbert:
             print(f"\n# Ranking with ColBERT\n")
             results['colbert'] = Ranker.multi_vector_search(queries, corpus, return_topk=self.topk_colbert, model_name_or_path=self.model_ckpts['colbert'][self.models_domain])
+        
+        if self.run_baai:
+            print(f"\n# Ranking with BAAI\n")
+            results['baai'] = Ranker.hugging_search(queries, corpus, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
+
+        if self.run_e5:
+            print(f"\n# Ranking with e5\n")
+            results['e5'] = Ranker.hugging_search(queries, corpus, 'intfloat/e5-large-v2', self.topk_e5)
 
         
         distributions, weights = {}, {}
