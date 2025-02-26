@@ -12,31 +12,38 @@ from colbert import Indexer, Searcher
 from colbert.infra import Run, RunConfig, ColBERTConfig
 from torch.cuda import empty_cache
 from src.retrievers.hybrid import Aggregator
+import os
 
 
 def hugging_search(raw_corpus, queries, model_name, topk=5):
-        model = SentenceTransformer(model_name)
+    index_path = './' + model_name.split('/')[1] + 'faiss.bin'
+    model = SentenceTransformer(model_name)
+    idx2id = {i:pid for i, pid in enumerate(raw_corpus.keys())}
+    if os.path.exists(index_path):
+        print("Loading existing FAISS index...")
+        index = faiss.read_index(index_path)
+    else:
         test = ['hi']
         dimension = model.encode(test).shape[1]
         index = faiss.IndexFlatL2(dimension) 
 
-        idx2id = {i:pid for i, pid in enumerate(raw_corpus.keys())}
         corpus = list(raw_corpus.values())
 
         embeddings = model.encode(corpus, normalize_embeddings=True)
         index.add(embeddings)
+        faiss.write_index(index, index_path)
 
-        embeddings = model.encode(queries, normalize_embeddings=True)
-        distances, indices = index.search(embeddings, topk)
+    embeddings = model.encode(queries, normalize_embeddings=True)
+    distances, indices = index.search(embeddings, topk)
 
-        results = []
-        for i in range(len(queries)):
-            result_one_q = []
-            for idx, score in zip(indices[i], distances[i]):
-                result_one_q.append({'corpus_id': idx2id[idx], 'score': 1.0 - score})
-            results.append(result_one_q)
+    results = []
+    for i in range(len(queries)):
+        result_one_q = []
+        for idx, score in zip(indices[i], distances[i]):
+            result_one_q.append({'corpus_id': idx2id[idx], 'score': 1.0 - score})
+        results.append(result_one_q)
 
-        return results
+    return results
 
 def bm25_search(raw_corpus, queries, topk):
     stemmer = Stemmer.Stemmer("english")
@@ -54,7 +61,7 @@ def bm25_search(raw_corpus, queries, topk):
     for j in range(results.shape[0]):
         result_one_q = []
         for i in range(results.shape[1]):
-            doc, score = results[1, i], scores[1, i]
+            doc, score = results[j, i], scores[j, i]
             result_one_q.append({'corpus_id': idx2id[doc], 'score': score})
         final_results.append(result_one_q)
     
@@ -98,16 +105,29 @@ class CustomeRetriever:
         results = {}
 
         if self.run_bm25:
+            print('Running BM25...')
             results['bm25'] = bm25_search(corpus, queries, self.topk_bm25)
+            print('Completed!')
+            print()
         
         if self.run_e5:
+            print('Running e5')
             results['e5'] = hugging_search(corpus, queries, 'intfloat/e5-large-v2', self.topk_e5)
+            print('Completed!')
+            print()
         
         if self.run_baai:
+            print('Running baai')
             results['baai'] = hugging_search(corpus, queries, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
-        
-        ranked_list = Aggregator.fuse(ranked_lists=results, method='rrf')
+            print('Completed!')
+            print()
 
+        print('Fusing') 
+        ranked_list = Aggregator.fuse(ranked_lists=results, method='rrf')
+        print('Completed!')
+        print()
+
+        print('Reranking')
         final_ranked_list = []
 
         for qid, t in enumerate(ranked_list):
@@ -121,5 +141,7 @@ class CustomeRetriever:
             #print(colbert_list)
 
             final_ranked_list.append([{'corpus_id': temp_idx2id[i['result_index']], 'score':i['score']} for i in colbert_list])
+        print('Completed!')
+        print()
         
         return final_ranked_list

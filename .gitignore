@@ -1,6 +1,7 @@
 downloads/
 output/
 experiments/
+**.bin
 
 downloads/**
 output/**./output
