@@ -24,10 +24,10 @@ for sample in dataset:
         for question in questions:
             test_data.append((law_number, question))
 
-queries      = [td[1] for td in test_data]
+queries      = ['query: ' + td[1] for td in test_data]
 ground_truth = [td[0] for td in test_data]
 
-def evaluate_retrieval(corpus, queries, ground_truth, k=10):
+def evaluate_retrieval(corpus, queries, ground_truth, k=5):
     retriever = CustomeRetriever()
     results = retriever.retrieve(corpus, queries, topk=k)
 

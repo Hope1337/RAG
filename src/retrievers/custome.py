@@ -13,6 +13,7 @@ from colbert.infra import Run, RunConfig, ColBERTConfig
 from torch.cuda import empty_cache
 from src.retrievers.hybrid import Aggregator
 import os
+from sentence_transformers import CrossEncoder
 
 
 def hugging_search(raw_corpus, queries, model_name, topk=5):
@@ -89,20 +90,52 @@ def colbert_rerank(raw_results, query, topk):
     RAG = RAGPretrainedModel.from_pretrained("colbert-ir/colbertv2.0")
     return RAG.rerank(query=query, documents=raw_results, k=topk)
 
+def rank_documents(corpus, query, topk):
+    """
+    Rank documents using the cross-encoder model.
+    
+    :param corpus: List of documents (strings)
+    :param query: Query string
+    :param topk: Number of top relevant documents to return
+    :return: List of dictionaries with 'result_index' and 'score'
+    """
+    # Load the cross-encoder model
+    cross_encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2")
+    
+    # Create input pairs (query, document)
+    pairs = [(query, doc) for doc in corpus]
+    
+    # Compute relevance scores
+    scores = cross_encoder_model.predict(pairs)
+    
+    # Rank documents by score
+    ranked_results = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+    
+    # Return top-k results
+    return [{"result_index": idx, "score": score} for idx, score in ranked_results[:topk]]
+
 class CustomeRetriever:
      
      def __init__(self):
         self.run_bm25 = True
         self.run_e5   = True
         self.run_baai = True
+        self.run_mixed_bread = True
 
         self.topk_bm25 = 10
         self.topk_e5   = 10
         self.topk_baai = 10
+        self.topk_mixed_bread = 10
         pass 
      
      def retrieve(self, corpus, queries, topk):
         results = {}
+
+        if self.run_mixed_bread:
+            print('Running mixed bread...')
+            results['mixed_bread'] = hugging_search(corpus, queries, 'mixedbread-ai/mxbai-embed-large-v1', self.topk_mixed_bread)
+            print('Completed!')
+            print()
 
         if self.run_bm25:
             print('Running BM25...')
@@ -118,7 +151,7 @@ class CustomeRetriever:
         
         if self.run_baai:
             print('Running baai')
-            results['baai'] = hugging_search(corpus, queries, 'BAAI/bge-large-zh-v1.5', self.topk_baai)
+            results['baai'] = hugging_search(corpus, queries, 'BAAI/bge-large-en-v1.5', self.topk_baai)
             print('Completed!')
             print()
 
@@ -137,7 +170,8 @@ class CustomeRetriever:
                 temp_corpus.append(corpus[tt['corpus_id']])
                 temp_idx2id[tid] = tt['corpus_id']
             
-            colbert_list = colbert_rerank(temp_corpus, queries[qid], topk=topk)
+            #colbert_list = colbert_rerank(temp_corpus, queries[qid], topk=topk)
+            colbert_list = rank_documents(temp_corpus, queries[qid], topk=topk)
             #print(colbert_list)
 
             final_ranked_list.append([{'corpus_id': temp_idx2id[i['result_index']], 'score':i['score']} for i in colbert_list])

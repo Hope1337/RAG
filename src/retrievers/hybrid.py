@@ -275,7 +275,7 @@ class Aggregator:
             return {pid: (num_candidates - idx+1) / num_candidates for idx, pid in enumerate(results.keys())}
         
         elif transformation == 'reciprocal-rank':
-            return {pid: 1 / (60 + idx+1) for idx, pid in enumerate(results.keys())}
+            return {pid: 1 / (5 + idx) for idx, pid in enumerate(results.keys())}
 
         elif transformation == 'min-max':
             scores = torch.tensor(list(results.values()), device=device, dtype=torch.float32)
