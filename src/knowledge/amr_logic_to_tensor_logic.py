@@ -23,7 +23,9 @@ def amr_logic_to_tensor_logic(
                 embeddings[index] for index in clause.alignment.indices
             ]
             embedding = np.stack(embeddings_slices).mean(axis=0)
-        pred = ttp.Predicate(clause.symbol, embedding)
+            # shape = embedding.shape
+            # embedding = embedding.reshape()
+        pred = ttp.Predicate(clause.symbol, embedding )
         return pred(
             *[amr_term_to_tensor_logic_term(arg, embeddings) for arg in clause.terms]
         )
@@ -52,6 +54,7 @@ def amr_term_to_tensor_logic_term(
         embedding: Any = None
         if term.alignment and embeddings is not None:
             embedding = embeddings[term.alignment.indices[0]]
+            # embedding= embedding.reshape()
         return ttp.Constant(term.value, embedding)
     if isinstance(term, alc.Variable):
         return ttp.Variable(term.name)

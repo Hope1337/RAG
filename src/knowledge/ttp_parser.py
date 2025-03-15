@@ -17,7 +17,7 @@ class TtpParse:
     amr_logic_converter: AmrLogicConverter
 
     def __init__(self, 
-            embedding_generator: EmbeddingGenerator, 
+            embedding_generator: EmbeddingGenerator = None, 
             arm_parse_model: str = 'doc-sen-conll-amr-seed42',
             amr_merge_max_collapsed_per_node=5
         ):
@@ -52,7 +52,24 @@ class TtpParse:
         alternative_trees = AmrMergeGenerator(
             max_collapsed_per_node=5
         ).generate_merged_amrs(tree)
+        logic = self.amr_logic_converter.convert(tree)
         alternative_logics = [self.amr_logic_converter.convert(tree) for tree in alternative_trees]
-        [embeddings] = self.embedding_generator.generate_word_embeddings([text])
+        embeddings= None
+        if self.embedding_generator is not None:
+            [embeddings] = self.embedding_generator.generate_word_embeddings([text])
         tensor_logics = [amr_logic_to_tensor_logic(logic, embeddings) for logic in alternative_logics]
-        return penman_notation, alternative_logics, tensor_logics
+        return penman_notation, logic, alternative_logics, tensor_logics
+    
+    def sentence_parse_no_merge(self, sentence):
+        tokens, positions = self.amr_parser.tokenize(sentence)
+        annotations, machines = self.amr_parser.parse_sentence(tokens)
+        amr = machines.get_amr()
+        penman_notation =  amr.to_penman(jamr=False, isi=True)
+        tree = penman.parse(penman_notation)
+        text = tree.metadata["tok"]
+        logic = self.amr_logic_converter.convert(tree)
+        embeddings= None
+        if self.embedding_generator is not None:
+            [embeddings] = self.embedding_generator.generate_word_embeddings([text])
+        tensor_logic = amr_logic_to_tensor_logic(logic, embeddings)
+        return penman_notation, logic, tensor_logic

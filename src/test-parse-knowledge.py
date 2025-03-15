@@ -1,4 +1,5 @@
 from knowledge.ttp_parser import TtpParse
+from tensor_theorem_prover import ResolutionProver
 
 # Parse premises to knowledge
 premises =[
@@ -16,11 +17,13 @@ print('knowledge:')
 for rule in knowledge:
     print('\t', rule)
 
-# # Parse conclusion
-# conclusion = "¬WantToBeAddictedTo(rina, caffeine) ∨ (¬AwareThatDrug(rina, caffeine))"
-# goal = parser.parse_FOL_to_ttp_logic(conclusion)
+# Parse conclusion
+conclusion = "¬WantToBeAddictedTo(rina, caffeine) ∨ (¬AwareThatDrug(rina, caffeine))"
+goal = parser.parse_FOL_to_ttp_logic(conclusion)
 
-# prover = ResolutionProver(knowledge=knowledge)
-# print('Goal prove:', goal)
-# proof = prover.prove(goal=goal)
-# print(proof)
+prover = ResolutionProver(knowledge=knowledge)
+print('Goal prove:', goal)
+proofs = prover.prove_all(goal=goal)
+print(f'Found {len(proofs)} proofs')
+if len(proofs) > 0:
+    print(proofs[0])
