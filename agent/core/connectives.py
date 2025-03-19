@@ -1,5 +1,11 @@
+from __future__ import annotations
 from dataclasses import dataclass
-from .types import Clause
+
+
+from typing import Union
+
+from .atom import Atom
+from .variable import Variable
 
 @dataclass
 class And:
@@ -26,7 +32,6 @@ class And:
                 arg_strs.append(str(arg))
         return f"{' ∧ '.join(arg_strs)}"
 
-
 @dataclass
 class Or:
     """Logical Disjunction"""
@@ -52,7 +57,6 @@ class Or:
                 arg_strs.append(str(arg))
         return f"{' ∨ '.join(arg_strs)}"
 
-
 @dataclass
 class Not:
     """Logical Negation"""
@@ -63,7 +67,6 @@ class Not:
         if type(self.body) is And:
             return f"¬({str(self.body)})"
         return f"¬{str(self.body)}"
-
 
 @dataclass
 class Implies:
@@ -80,3 +83,25 @@ class Implies:
         if type(self.consequent) in [And, Or, Implies]:
             consequent_str = f"({consequent_str})"
         return f"{antecedent_str} → {consequent_str}"
+    
+@dataclass
+class Exists:
+    """Logical Existential Quantifier"""
+
+    variable: Variable
+    body: "Clause"
+
+    def __str__(self) -> str:
+        return f"∃{str(self.variable)}({str(self.body)})"
+
+@dataclass
+class All:
+    """Logical Universal Quantifier"""
+
+    variable: Variable
+    body: "Clause"
+
+    def __str__(self) -> str:
+        return f"∀{str(self.variable)}({str(self.body)})"
+
+Clause = Union[Atom, Not, Implies, And, Or, Exists, All]

@@ -1,7 +1,7 @@
 from knowledge.ttp_parser import TtpParse
 import torch
 from knowledge.embeddings.RobertaEmbeddingGenerator import RobertaEmbeddingGenerator
-from tensor_theorem_prover import ResolutionProver
+from tensor_theorem_prover import ResolutionProver, Implies
 
 embedding_generator = RobertaEmbeddingGenerator(
     device=torch.device('cuda'),
@@ -23,6 +23,7 @@ premises =[
     "¬(IsDependentOn(rina, caffeine) ⊕ Student(rina))",
 ] 
 knowledge = [parser.parse_FOL_to_ttp_logic(premise) for premise in premises]
+
 print('knowledge:')
 for rule in knowledge:
     print('\t', rule)
@@ -33,9 +34,12 @@ for rule in knowledge:
 #     print('\t', str(alternative_logic))
 notation, logic, tensor_logic = parser.sentence_parse_no_merge(question)
 
-print('logic', logic)
+print('logic:', logic)
+print('tensor_logic: ', tensor_logic)
 
 goal = parser.parse_FOL_to_ttp_logic("¬WantToBeAddictedTo(rina, caffeine) ∨ (¬AwareThatDrug(rina, caffeine))")
+goal = parser.parse_FOL_to_ttp_logic("(¬AwareThatDrug(rina, caffeine))")
+# goal = tensor_logic
 prover = ResolutionProver(knowledge=knowledge)
 print('Goal prove:', goal)
 proof = prover.prove(goal=goal)
