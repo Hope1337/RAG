@@ -7,3 +7,6 @@ downloads/**
 output/**./output
 experiments/**
 .
+/src/knowledge/corpora/*.zip
+/src/knowledge/corpora/stopwords
+/src/knowledge/stanford-corenlp-4.5.8
