@@ -10,3 +10,4 @@ experiments/**
 /src/knowledge/corpora/*.zip
 /src/knowledge/corpora/stopwords
 /src/knowledge/stanford-corenlp-4.5.8
+/prover9_proof/__pycache__
