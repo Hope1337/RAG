@@ -14,14 +14,14 @@ def detect_application_expressions(exp: Expression) -> list[ApplicationExpressio
     applications.append(exp)
   
   if isinstance(exp, QuantifiedExpression):
-    applications.append(detect_application_expressions(exp.term))
+    applications.extend(detect_application_expressions(exp.term))
 
   if isinstance(exp, BooleanExpression):
-    applications.append(detect_application_expressions(exp.first))
-    applications.append(detect_application_expressions(exp.second))
+    applications.extend(detect_application_expressions(exp.first))
+    applications.extend(detect_application_expressions(exp.second))
 
   if isinstance(exp, NegatedExpression):
-    applications.append(detect_application_expressions(exp.term))
+    applications.extend(detect_application_expressions(exp.term))
 
   return applications
 
@@ -55,21 +55,27 @@ def resolve_quantified_variables(exp: Expression, variableMap: dict[Variable, Co
     
     => return: `Takes(Tuan, NLP) & Passes(Tuan, NLP) -> AcquiresKnowledge(Tuan)`
   """
+  result = Expression.fromstring(str(exp))
 
-  if not isinstance(exp, QuantifiedExpression):
-    return exp
+  if not isinstance(result, QuantifiedExpression):
+    return result
   
-  quantified_variable = exp.variable
-  constant = variableMap[quantified_variable]
+  # replace quantified variable
+  quantified_variable = result.variable
+  constant = variableMap.get(quantified_variable)
+  
+  if isinstance(result.term, QuantifiedExpression):
+    result.term = resolve_quantified_variables(result.term, variableMap) 
 
-  if constant is None:
-    return exp
-  replaced_exp = exp.replace(quantified_variable, constant, replace_bound= True)
-  return resolve_quantified_variables(replaced_exp.term, variableMap)
+  # replace quantified variable 
+  if constant is not None:
+    result = result.replace(quantified_variable, constant, replace_bound=True).term
+  
+  return result
 
-def find_same_application(fact: ApplicationExpression, application_exps: list[ApplicationExpression]):
+def find_same_predicate(fact: ApplicationExpression, application_exps: list[ApplicationExpression]):
   """
-  Find the same application expression with provided fact. Return `None` if not found.
+  Find the same predicate. Return `None` if not found.
 
   Example:
 
@@ -79,9 +85,17 @@ def find_same_application(fact: ApplicationExpression, application_exps: list[Ap
 
   => Return `Takes(x, y)`
   """
-  fact_function, fact_args = fact.expression.uncurry()
-  return next((application_exp for application_exp in application_exps if application_exp.uncurry()[0] == fact_function & len(application_exp.uncurry()[1]) == len(fact_args)), None)
+  fact_function, fact_args = fact.uncurry()
+  return next((application_exp for application_exp in application_exps if application_exp.uncurry()[0] == fact_function and len(application_exp.uncurry()[1]) == len(fact_args)), None)
 
-def detect_section(section_prefix, section_suffix, text):
-    pattern = re.search(f"=+ {section_prefix} =+\n(.*?)=+ {section_suffix} =+", text, re.DOTALL)
-    return pattern.group(1).strip() if pattern else None
+def is_fact(exp: ApplicationExpression):
+  """
+  Check whether the expression is a fact. 
+  
+  Ex:
+    - `Take(x, y)` -> False
+    - `Take(Tuan, y)` -> False
+    - `Take(Tuan, NLP)` -> True 
+  """
+  args = exp.uncurry()[1]
+  return all(isinstance(arg, ConstantExpression) for arg in args)

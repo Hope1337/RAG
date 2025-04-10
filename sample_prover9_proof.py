@@ -1,9 +1,9 @@
 from nltk.sem.logic import Expression
-from prover9_proof_ext.sample_proof import _proof
-from prover9_proof_ext.prover9_proof import Prover9Proof
-
 from nltk.inference.prover9 import *
 from nltk.sem import Expression
+import xml.etree.ElementTree as ET
+
+from prover9_proof.proof import Proof
 
 read_expr = Expression.fromstring
 
@@ -31,26 +31,20 @@ goal2 = read_expr('GainsUnderstanding(Tuan)')
 assumptions = [r1, r2, r3, fact1, fact2, fact3, fact4]
 
 prover9 = Prover9()
-prover9._prover9_bin = 'D:/Code/ARM_Codes/Prover9_Bin/bin/prover9'
-prover9._prooftrans_bin = 'D:/Code/ARM_Codes/Prover9_Bin/bin/prooftrans'
+prover9._prover9_bin = './bin/prover9'
+prover9._prooftrans_bin = './bin/prooftrans'
 
 result = prover9._prove(goal = goal2, assumptions = assumptions)
-stdout = result[1]
+stdout = result[1] # This is raw proof of Prover9. See file prover9_proof/sample_proof.py
 prooftrans_out = prover9._call_prooftrans(stdout, ["xml"])[0]
-proof_xml = prooftrans_out[prooftrans_out.find('<proofs'):] # THIS IS PROOF XML FILE
+proof_xml = prooftrans_out[prooftrans_out.find('<proofs'):] # This is prover0 proof under xml format. See file prover9_proof/sample_proof.py
 
-# 
-import xml.etree.ElementTree as ET
-from prover9_proof_ext.prover9_proof import ProofClause
+root = ET.fromstring(proof_xml)
 
-tree = ET.parse('D:\Code\ARM_Codes\RAG\prover9_proof_ext\proof.xml')
-
-ET.Element
-root = tree.getroot()
 number_of_proofs = root.attrib['number_of_proofs']
 
 proof_node = root.find('proof')
 
-clause_nodes = proof_node.findall('clause')
+proof = Proof(proof_node=proof_node)
 
-proof_clauses = [ProofClause(clause_node) for clause_node in clause_nodes]
+print(proof)
