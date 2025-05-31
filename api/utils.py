@@ -1,4 +1,4 @@
-from .prompts import guideline_prompt, which_type_prompt, math_instruction_prompt, math_prompt, reasoning_prompt, reasoning_instructions_prompt
+from prompts import guideline_prompt, which_type_prompt, math_instruction_prompt, math_prompt, reasoning_prompt, reasoning_instructions_prompt
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, TextStreamer
 import sys
 
@@ -6,7 +6,7 @@ def get_model(model_name = "Qwen/Qwen2.5-7B-Instruct", bnb_config = BitsAndBytes
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        #quantization_config=bnb_config,
+        quantization_config=bnb_config,
         device_map="auto",
         trust_remote_code=True,
     )
