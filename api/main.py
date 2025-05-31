@@ -107,14 +107,14 @@ def validate(request):
     if not all(isinstance(premise, str) for premise in premises):
         return 'Unexpected, require premises-NL is an array of string'
 
-    # `questions` field
-    if 'questions' not in data:
-        return 'Require `questions` field'
+    # `question` field
+    if 'question' not in data:
+        return 'Require `question` field'
     
-    questions = data.get('questions')
+    question = data.get('question')
 
-    if not isinstance(questions, str):
-        return 'Unexpected, require `questions` is a string.'
+    if not isinstance(question, str):
+        return 'Unexpected, require `question` is a string.'
     
     return None
 
@@ -209,13 +209,13 @@ def generate():
           type: object
           required:
             - premises-NL
-            - questions
+            - question
           properties:
             premises-NL:
               type: array
               items:
                 type: string
-            questions:
+            question:
               type: string
     responses:
       200:
@@ -236,9 +236,8 @@ def generate():
     try:
         
         premises = data.get("premises-NL", [])
-        questions   = data.get("questions", '')
 
-        question = questions
+        question = data.get("question", '')
 
         action = 'classify'
         # Clasify question
